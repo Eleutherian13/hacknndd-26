@@ -11,69 +11,90 @@ export default function OrderPage() {
     {
       id: 1,
       type: 'bot',
-      content: 'Hello! How can I help you with your medicine order today? You can type or use voice.',
+      content: 'Hello! How can I help you with your medicine order today? You can type your request or use voice if your browser supports it.',
       timestamp: new Date()
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const [conversationId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    // Initialize speech recognition
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
+    // Initialize speech recognition - with better compatibility check
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      try {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = false;
+        recognitionRef.current.lang = 'en-US';
 
-      recognitionRef.current.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setMessage(transcript);
-        setIsListening(false);
-        toast.success('Voice captured: ' + transcript);
-      };
+        recognitionRef.current.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          setMessage(transcript);
+          setIsListening(false);
+          toast.success('Voice captured: ' + transcript);
+        };
 
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-        
-        // Provide more helpful error messages
-        let errorMessage = 'Voice recognition failed';
-        switch(event.error) {
-          case 'network':
-            errorMessage = 'Network error - Please check your internet connection. Voice recognition requires an active internet connection.';
-            break;
-          case 'not-allowed':
-            errorMessage = 'Microphone access denied. Please allow microphone permissions in your browser settings.';
-            break;
-          case 'no-speech':
-            errorMessage = 'No speech detected. Please try again and speak clearly.';
-            break;
-          case 'aborted':
-            errorMessage = 'Speech recognition was aborted. Please try again.';
-            break;
-          case 'audio-capture':
-            errorMessage = 'No microphone found. Please connect a microphone and try again.';
-            break;
-          default:
-            errorMessage = `Voice recognition error: ${event.error}`;
-        }
-        
-        toast.error(errorMessage, { duration: 5000 });
-      };
+        recognitionRef.current.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          setIsListening(false);
+          setVoiceSupported(false);
+          
+          // Provide more helpful error messages
+          let errorMessage = 'Voice recognition failed';
+          switch(event.error) {
+            case 'network':
+              errorMessage = 'Network error: Speech recognition service unavailable. Please use text input instead, or check your internet connection.';
+              break;
+            case 'not-allowed':
+              errorMessage = 'Microphone access denied. Please allow microphone permissions in your browser settings.';
+              break;
+            case 'no-speech':
+              errorMessage = 'No speech detected. Please try again and speak clearly.';
+              break;
+            case 'aborted':
+              errorMessage = 'Speech recognition was aborted. Please try again.';
+              break;
+            case 'audio-capture':
+              errorMessage = 'No microphone found. Please connect a microphone and try again.';
+              break;
+            case 'service-not-allowed':
+              errorMessage = 'Speech recognition service is not available. Please use text input instead.';
+              break;
+            default:
+              errorMessage = `Voice recognition error: ${event.error}. Please try text input instead.`;
+          }
+          
+          toast.error(errorMessage, { duration: 5000 });
+        };
 
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-      };
+        recognitionRef.current.onend = () => {
+          setIsListening(false);
+        };
+
+        // Mark as supported
+        setVoiceSupported(true);
+      } catch (err) {
+        console.error('Failed to initialize speech recognition:', err);
+        setVoiceSupported(false);
+      }
+    } else {
+      console.warn('Speech Recognition not supported in this browser');
+      setVoiceSupported(false);
     }
 
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {
+          console.error('Error stopping speech recognition:', err);
+        }
       }
     };
   }, []);
@@ -150,18 +171,28 @@ export default function OrderPage() {
   };
 
   const toggleVoiceRecognition = () => {
-    if (!recognitionRef.current) {
-      toast.error('Voice recognition is not supported in your browser');
+    if (!voiceSupported || !recognitionRef.current) {
+      toast.error('Voice recognition not available. Please use text input instead.', { duration: 3000 });
       return;
     }
 
     if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+      try {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      } catch (err) {
+        console.error('Error stopping voice recognition:', err);
+      }
     } else {
-      recognitionRef.current.start();
-      setIsListening(true);
-      toast.success('Listening... Speak now');
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+        toast.success('Listening... Speak now', { duration: 2000 });
+      } catch (err) {
+        console.error('Error starting speech recognition:', err);
+        toast.error('Could not start voice recognition. Please use text input instead.');
+        setVoiceSupported(false);
+      }
     }
   };
 
@@ -320,11 +351,15 @@ export default function OrderPage() {
             </button>
             <button
               onClick={toggleVoiceRecognition}
+              disabled={!voiceSupported}
               className="btn-secondary btn"
               style={{
-                background: isListening ? '#ef4444' : undefined,
-                color: isListening ? 'white' : undefined
+                background: isListening ? '#ef4444' : voiceSupported ? undefined : '#cbd5e1',
+                color: isListening ? 'white' : undefined,
+                opacity: voiceSupported ? 1 : 0.5,
+                cursor: voiceSupported ? (isListening ? 'pointer' : 'pointer') : 'not-allowed'
               }}
+              title={voiceSupported ? 'Click to toggle voice input' : 'Voice input not available - please use text'}
             >
               {isListening ? <MicOff size={20} /> : <Mic size={20} />}
             </button>

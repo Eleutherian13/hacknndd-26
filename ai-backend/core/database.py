@@ -20,31 +20,43 @@ async def init_db():
     try:
         # MongoDB
         logger.info(f"Connecting to MongoDB: {settings.MONGODB_URI}")
-        mongodb_client = AsyncIOMotorClient(settings.MONGODB_URI)
+        mongodb_client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=10000)
         database = mongodb_client[settings.MONGODB_DB_NAME]
         
         # Test connection
-        await mongodb_client.admin.command('ping')
-        logger.info("MongoDB connected successfully")
+        try:
+            await mongodb_client.admin.command('ping')
+            logger.info("MongoDB connected successfully")
+        except Exception as mongo_err:
+            logger.warning(f"MongoDB connection test failed: {str(mongo_err)}")
+            logger.warning("Continuing without database - API will be limited")
         
-        # Create indexes
-        await create_indexes()
+        # Create indexes (non-critical if it fails)
+        try:
+            await create_indexes()
+        except Exception as idx_err:
+            logger.warning(f"Could not create indexes: {str(idx_err)}")
         
         # Redis
         logger.info(f"Connecting to Redis: {settings.REDIS_URL}")
-        redis_client = await aioredis.from_url(
-            settings.REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True
-        )
-        
-        # Test connection
-        await redis_client.ping()
-        logger.info("Redis connected successfully")
+        try:
+            redis_client = await aioredis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_connect_timeout=10
+            )
+            
+            # Test connection
+            await redis_client.ping()
+            logger.info("Redis connected successfully")
+        except Exception as redis_err:
+            logger.warning(f"Redis connection failed: {str(redis_err)}")
+            logger.warning("Continuing without Redis - caching will be unavailable")
         
     except Exception as e:
         logger.error(f"Database connection error: {str(e)}")
-        raise
+        logger.warning("Application starting in limited mode (no database/cache)")
 
 
 async def close_db():

@@ -18,8 +18,9 @@ const connectDatabase = async () => {
     });
 
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error);
-    throw error;
+    console.error('❌ MongoDB connection failed:', error.message);
+    console.log('⚠️  Continuing without database connection...');
+    // Don't throw - allow server to start in limited mode
   }
 };
 

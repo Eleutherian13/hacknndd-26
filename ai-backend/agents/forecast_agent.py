@@ -2,7 +2,6 @@ from langchain_openai import ChatOpenAI
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional
 import pandas as pd
-from sklearn.linear_model import LinearRegression
 import numpy as np
 import logging
 
@@ -10,6 +9,13 @@ from core.config import settings
 from models.prediction import PredictionConfidence
 
 logger = logging.getLogger(__name__)
+
+# Lazy import LinearRegression only when needed
+try:
+    from sklearn.linear_model import LinearRegression
+except ImportError:
+    logger.warning("scikit-learn not fully available, using numpy only")
+    LinearRegression = None
 
 
 class ForecastAgent:
